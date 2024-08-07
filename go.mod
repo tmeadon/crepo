@@ -1,6 +1,6 @@
 module github.com/tmeadon/cr
 
-go 1.22.2
+go 1.22
 
 require (
 	github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e // indirect
