@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,25 +10,25 @@ import (
 	"github.com/manifoldco/promptui"
 )
 
-func findGitRepos(root, searchTerm string, excludedDirs []string) ([]string, error) {
+func findGitRepos(root, normalizedSearchTerm string, excludedDirs map[string]struct{}) ([]string, error) {
 	var gitRepos []string
 
-	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 
-		if info.IsDir() && info.Name() == ".git" {
-			repoPath := filepath.Dir(path)
-			if isRepoMatch(repoPath, searchTerm) {
-				gitRepos = append(gitRepos, repoPath)
+		if d.IsDir() {
+			name := d.Name()
+			if name == ".git" {
+				repoPath := filepath.Dir(path)
+				if isRepoMatch(repoPath, normalizedSearchTerm) {
+					gitRepos = append(gitRepos, repoPath)
+				}
+				return filepath.SkipDir
 			}
-			return filepath.SkipDir
-		}
 
-		// Skip directories in skipDirs
-		for _, dir := range excludedDirs {
-			if info.IsDir() && info.Name() == dir {
+			if _, ok := excludedDirs[name]; ok {
 				return filepath.SkipDir
 			}
 		}
@@ -39,11 +40,26 @@ func findGitRepos(root, searchTerm string, excludedDirs []string) ([]string, err
 }
 
 func selectRepo(searchTerm string, config *Config) {
-	repos, err := findGitRepos(config.RepoRoot, searchTerm, config.Exclusions)
+	normalizedSearch := normalize(searchTerm)
 
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "Error during repo discovery:", err)
-		return
+	repos, err := loadRepoCache()
+	if err != nil || repos == nil {
+		repos, err = findGitRepos(config.RepoRoot, normalizedSearch, config.exclusionSet)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Error during repo discovery:", err)
+			return
+		}
+		if err := saveRepoCache(repos); err != nil {
+			fmt.Fprintln(os.Stderr, "Error saving repo cache:", err)
+		}
+	} else if searchTerm != "" {
+		var filtered []string
+		for _, repo := range repos {
+			if isRepoMatch(repo, normalizedSearch) {
+				filtered = append(filtered, repo)
+			}
+		}
+		repos = filtered
 	}
 
 	switch len(repos) {
@@ -62,16 +78,18 @@ func switchDir(path string) {
 	fmt.Print(path)
 }
 
-func isRepoMatch(path string, searchTerm string) bool {
-	path = strings.Replace(strings.ToLower(path), " ", "", -1)
-	searchTerm = strings.Replace(strings.ToLower(searchTerm), " ", "", -1)
-	return strings.Contains(path, searchTerm)
+func isRepoMatch(path string, normalizedSearchTerm string) bool {
+	return strings.Contains(normalize(path), normalizedSearchTerm)
+}
+
+func normalize(s string) string {
+	return strings.ReplaceAll(strings.ToLower(s), " ", "")
 }
 
 func promptForSelection(repos []string) string {
 	searcher := func(input string, index int) bool {
 		item := repos[index]
-		return isRepoMatch(item, input)
+		return isRepoMatch(item, normalize(input))
 	}
 
 	prompt := promptui.Select{

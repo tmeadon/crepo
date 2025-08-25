@@ -43,6 +43,19 @@ func main() {
 			return
 		}
 
+		if os.Args[1] == "-u" || os.Args[1] == "--update" {
+			repos, err := findGitRepos(config.RepoRoot, "", config.exclusionSet)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "Error during repo discovery:", err)
+				os.Exit(1)
+			}
+			if err := saveRepoCache(repos); err != nil {
+				fmt.Fprintln(os.Stderr, "Error saving repo cache:", err)
+				os.Exit(1)
+			}
+			return
+		}
+
 		selectRepo(os.Args[1], config)
 	default:
 		fmt.Fprintln(os.Stderr, "Multiple search terms not supported")
