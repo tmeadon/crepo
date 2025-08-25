@@ -9,8 +9,9 @@ import (
 )
 
 type Config struct {
-	RepoRoot   string   `yaml:"repo_root"`
-	Exclusions []string `yaml:"exclusions"`
+	RepoRoot     string              `yaml:"repo_root"`
+	Exclusions   []string            `yaml:"exclusions"`
+	exclusionSet map[string]struct{} `yaml:"-"`
 }
 
 func getDefaultConfig() *Config {
@@ -20,13 +21,15 @@ func getDefaultConfig() *Config {
 		log.Fatalf("Error getting user home directory: %v", err)
 	}
 
-	return &Config{
+	cfg := &Config{
 		RepoRoot: homeDir,
 		Exclusions: []string{
 			"node_modules",
 			"vendor",
 		},
 	}
+	cfg.buildExclusionSet()
+	return cfg
 }
 
 func getConfigFilePath() (string, error) {
@@ -74,6 +77,7 @@ func loadConfig() (*Config, error) {
 		return nil, err
 	}
 
+	config.buildExclusionSet()
 	return &config, nil
 }
 
@@ -93,4 +97,11 @@ func saveConfig(config *Config) error {
 	}
 
 	return nil
+}
+
+func (c *Config) buildExclusionSet() {
+	c.exclusionSet = make(map[string]struct{}, len(c.Exclusions))
+	for _, dir := range c.Exclusions {
+		c.exclusionSet[dir] = struct{}{}
+	}
 }
